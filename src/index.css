@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+.prose {
+  @apply text-[#333];
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  @apply text-[#1A1A1A] font-bold tracking-tight;
+}
+
+.prose a {
+  @apply text-[#008751] no-underline hover:underline font-bold;
+}
+
+.prose strong {
+  @apply text-[#1A1A1A] font-bold;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-[#008751] bg-[#F8FDF9] py-2 px-4 italic rounded-r-lg;
+}
