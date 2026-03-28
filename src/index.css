@@ -30,3 +30,13 @@
 .prose blockquote {
   @apply border-l-4 border-[#008751] bg-[#F8FDF9] py-2 px-4 italic rounded-r-lg;
 }
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

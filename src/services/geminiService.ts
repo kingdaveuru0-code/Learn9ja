@@ -101,7 +101,7 @@ export async function chatWithAssistant(message: string, history: ChatMessage[])
   const chat = ai.chats.create({
     model: "gemini-3-flash-preview",
     config: {
-      systemInstruction: "You are 'LEARN GLOBAL Assistant', a friendly expert educator. Help students with their questions about global studies (Science, Arts, Commercial) at both Secondary and University levels. IMPORTANT: Explain everything to the lowest level possible, using very simple language that even a child can understand and execute. Use fun analogies and keep replies encouraging.",
+      systemInstruction: "You are 'Prof. Global', a world-renowned expert educator and the lead professor of LEARN GLOBAL. Your mission is to help students with their questions about global studies (Science, Arts, Commercial) at both Secondary and University levels. IMPORTANT: You are proactive, encouraging, and explain everything to the lowest level possible, using very simple language that even a child can understand and execute. Use fun analogies, keep replies concise and fast, and always offer a 'Professor's Pro Tip' at the end of your explanations.",
     },
     history: history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),
   });
@@ -110,12 +110,25 @@ export async function chatWithAssistant(message: string, history: ChatMessage[])
   return result.text;
 }
 
+export async function getProfessorTip(context: string = "general"): Promise<string> {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `As Prof. Global, provide a proactive, short, and inspiring learning tip for students. 
+    Context: ${context}.
+    The tip should be actionable and explained so simply that a child can understand.
+    Keep it under 30 words.`,
+  });
+  return response.text;
+}
+
 export async function fetchDailyPortal(): Promise<{ news: NewsItem[], history: HistoricalEvent[] }> {
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Today is ${new Date().toDateString()}. 
     Provide a world news and history portal for students including:
-    1. 4 current news items relevant to students (Global education, Science, Tech, and major world events).
+    1. 6 current news items relevant to students:
+       - 3 major world events (Global education, Science, Tech).
+       - 3 major Nigerian daily news items (Education, Economy, major local events).
     2. 3 historical events that happened on this day in history.
     
     Output in JSON format.`,
@@ -134,7 +147,7 @@ export async function fetchDailyPortal(): Promise<{ news: NewsItem[], history: H
                 summary: { type: Type.STRING },
                 url: { type: Type.STRING },
                 source: { type: Type.STRING },
-                category: { type: Type.STRING, enum: ["Local", "International", "Science", "Arts"] }
+                category: { type: Type.STRING, enum: ["Local", "International", "Science", "Arts", "Nigeria"] }
               },
               required: ["title", "summary", "url", "source", "category"]
             }
@@ -180,7 +193,20 @@ export async function generateWaecQuestions(subject: string, count: number = 5):
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate ${count} authentic WAEC-style past questions for the subject: ${subject}. 
-    Include the year (e.g. 2018, 2020), options, correct answer, and a helpful explanation.
+    Include a mix of:
+    - Objective (Multiple Choice)
+    - Essay (Theory)
+    - Practical (if applicable to the subject, otherwise more Essay)
+
+    For each question, include:
+    - year (e.g. 2018, 2020)
+    - type ("objective", "essay", or "practical")
+    - question text
+    - options (ONLY for objective)
+    - correctAnswer (ONLY for objective)
+    - sampleAnswer (ONLY for essay/practical)
+    - a helpful explanation (for all types)
+
     The questions should follow the West African Examination Council standards.
     IMPORTANT: The explanation must be written in extremely simple language that even a child can understand.`,
     config: {
@@ -193,15 +219,17 @@ export async function generateWaecQuestions(subject: string, count: number = 5):
             id: { type: Type.STRING },
             subject: { type: Type.STRING },
             year: { type: Type.STRING },
+            type: { type: Type.STRING, enum: ["objective", "essay", "practical"] },
             question: { type: Type.STRING },
             options: {
               type: Type.ARRAY,
               items: { type: Type.STRING }
             },
             correctAnswer: { type: Type.STRING },
+            sampleAnswer: { type: Type.STRING },
             explanation: { type: Type.STRING }
           },
-          required: ["id", "subject", "year", "question", "options", "correctAnswer", "explanation"]
+          required: ["id", "subject", "year", "type", "question", "explanation"]
         }
       }
     }
@@ -211,7 +239,7 @@ export async function generateWaecQuestions(subject: string, count: number = 5):
 }
 
 export async function fetchUniversities(name: string = "", country: string = ""): Promise<University[]> {
-  const url = `http://universities.hipolabs.com/search?name=${encodeURIComponent(name)}&country=${encodeURIComponent(country)}`;
+  const url = `https://universities.hipolabs.com/search?name=${encodeURIComponent(name)}&country=${encodeURIComponent(country)}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error("Failed to fetch universities");
   return await response.json();
@@ -234,4 +262,42 @@ export async function fetchSubjectTopics(subject: string, level: "Secondary" | "
   });
 
   return JSON.parse(response.text);
+}
+
+export async function generateStudentVideo(prompt: string): Promise<string> {
+  const apiKey = (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+  const ai = new GoogleGenAI({ apiKey });
+  
+  let operation = await ai.models.generateVideos({
+    model: 'veo-3.1-fast-generate-preview',
+    prompt: prompt,
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p',
+      aspectRatio: '16:9'
+    }
+  });
+
+  while (!operation.done) {
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    operation = await ai.operations.getVideosOperation({ operation: operation });
+  }
+
+  const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+  if (!downloadLink) throw new Error("Failed to generate video");
+
+  const response = await fetch(downloadLink, {
+    method: 'GET',
+    headers: {
+      'x-goog-api-key': apiKey!,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText);
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }

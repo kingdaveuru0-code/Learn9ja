@@ -34,7 +34,7 @@ export interface NewsItem {
   summary: string;
   url: string;
   source: string;
-  category: "Local" | "International" | "Science" | "Arts";
+  category: "Local" | "International" | "Science" | "Arts" | "Nigeria";
 }
 
 export interface HistoricalEvent {
@@ -57,9 +57,11 @@ export interface WaecQuestion {
   id: string;
   subject: string;
   year: string;
+  type: "objective" | "essay" | "practical";
   question: string;
-  options: string[];
-  correctAnswer: string;
+  options?: string[]; // Only for objective
+  correctAnswer?: string; // Only for objective
+  sampleAnswer?: string; // For essay/practical
   explanation: string;
 }
 
@@ -69,4 +71,12 @@ export interface University {
   web_pages: string[];
   alpha_two_code: string;
   "state-province": string | null;
+}
+
+export interface HistoryItem {
+  id: string;
+  type: "roadmap" | "quiz";
+  title: string;
+  timestamp: string;
+  data: any; // Roadmap or Quiz results
 }
