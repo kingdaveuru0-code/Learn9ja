@@ -15,3 +15,58 @@ export interface Roadmap {
   topic: string;
   steps: RoadmapStep[];
 }
+
+export interface Question {
+  id: string;
+  question: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "model";
+  text: string;
+}
+
+export interface NewsItem {
+  title: string;
+  summary: string;
+  url: string;
+  source: string;
+  category: "Local" | "International" | "Science" | "Arts";
+}
+
+export interface HistoricalEvent {
+  year: string;
+  event: string;
+  significance: string;
+}
+
+export interface Country {
+  name: string;
+  capital: string;
+  region: string;
+  flag: string;
+  mapUrl: string;
+  population: number;
+  languages: string[];
+}
+
+export interface WaecQuestion {
+  id: string;
+  subject: string;
+  year: string;
+  question: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+}
+
+export interface University {
+  name: string;
+  country: string;
+  web_pages: string[];
+  alpha_two_code: string;
+  "state-province": string | null;
+}
