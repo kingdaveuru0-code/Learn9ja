@@ -9,6 +9,7 @@ export interface RoadmapStep {
   explanation: string;
   resources: Resource[];
   completed: boolean;
+  suggestedQuestions?: Question[];
 }
 
 export interface Roadmap {

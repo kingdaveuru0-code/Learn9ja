@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Search, CheckCircle2, Circle, BookOpen, ExternalLink, ArrowLeft, Loader2, GraduationCap, MessageCircle, X, Send, HelpCircle, ChevronRight, Globe, Newspaper, History, ArrowRight, Zap, School, Video, Play, Clock, Trash2 } from "lucide-react";
+import { Search, CheckCircle2, Circle, BookOpen, ExternalLink, ArrowLeft, Loader2, GraduationCap, MessageCircle, X, Send, HelpCircle, ChevronRight, Globe, Newspaper, History, ArrowRight, Zap, School, Video, Play, Clock, Trash2, Trophy, Lightbulb } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ReactMarkdown from "react-markdown";
-import { generateRoadmap, generateQuestions, chatWithAssistant, fetchDailyPortal, fetchCountries, generateWaecQuestions, fetchUniversities, fetchSubjectTopics, getProfessorTip, generateStudentVideo } from "./services/geminiService";
+import { generateRoadmap, generateQuestions, chatWithAssistant, chatWithUniversityAssistant, fetchDailyPortal, fetchCountries, generateWaecQuestions, fetchUniversities, fetchSubjectTopics, getProfessorTip, generateStudentVideo, generateChallenge } from "./services/geminiService";
 import { Roadmap, RoadmapStep, Question, ChatMessage, NewsItem, HistoricalEvent, Country, WaecQuestion, University, HistoryItem } from "./types";
 import { cn } from "./lib/utils";
 
@@ -55,6 +55,47 @@ export default function App() {
   const [uniLoading, setUniLoading] = useState(false);
   const [uniSearch, setUniSearch] = useState("");
   const [uniCountrySearch, setUniCountrySearch] = useState("");
+  const [isUniChatOpen, setIsUniChatOpen] = useState(false);
+  const [uniChatMessages, setUniChatMessages] = useState<ChatMessage[]>([]);
+  const [uniChatInput, setUniChatInput] = useState("");
+  const [isUniTyping, setIsUniTyping] = useState(false);
+  const uniChatEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom of uni chat
+  useEffect(() => {
+    uniChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [uniChatMessages]);
+
+  const handleUniChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uniChatInput.trim()) return;
+
+    const userMsg: ChatMessage = { role: "user", text: uniChatInput };
+    setUniChatMessages(prev => [...prev, userMsg]);
+    setUniChatInput("");
+    setIsUniTyping(true);
+
+    try {
+      const context = `The student is currently browsing universities. Search term: "${uniSearch}", Country: "${uniCountrySearch}". Found ${universities.length} universities.`;
+      const response = await chatWithUniversityAssistant(uniChatInput, uniChatMessages, context);
+      setUniChatMessages(prev => [...prev, { role: "model", text: response }]);
+    } catch (error) {
+      console.error("Assistant Error:", error);
+      setUniChatMessages(prev => [...prev, { role: "model", text: "I'm sorry, I'm having a bit of a brain freeze. Can you try asking that again?" }]);
+    } finally {
+      setIsUniTyping(false);
+    }
+  };
+
+  const handleOpenUniChat = () => {
+    setIsUniChatOpen(true);
+    if (uniChatMessages.length === 0) {
+      setUniChatMessages([{ 
+        role: "model", 
+        text: "Hello! I am Prof. Global, your University Admissions Advisor. I see you're exploring global universities. How can I help you find your dream school today?" 
+      }]);
+    }
+  };
 
   // Video Portal State
   const [showVideoPortal, setShowVideoPortal] = useState(false);
@@ -107,6 +148,17 @@ export default function App() {
     }
   };
 
+  // Daily Challenge State
+  const [dailyChallenge, setDailyChallenge] = useState<Question | null>(null);
+  const [challengeLoading, setChallengeLoading] = useState(false);
+  const [challengeAnswered, setChallengeAnswered] = useState(false);
+  const [challengeCorrect, setChallengeCorrect] = useState<boolean | null>(null);
+  const [selectedChallengeOption, setSelectedChallengeOption] = useState<string | null>(null);
+
+  // Roadmap Step Questions State
+  const [stepAnswers, setStepAnswers] = useState<Record<string, string>>({});
+  const [showStepExplanations, setShowStepExplanations] = useState<Record<string, boolean>>({});
+
   // Splash Screen State
   const [showSplash, setShowSplash] = useState(true);
 
@@ -153,6 +205,25 @@ export default function App() {
     };
     fetchTip();
   }, []);
+
+  // Fetch Daily Challenge
+  useEffect(() => {
+    const fetchChallenge = async () => {
+      setChallengeLoading(true);
+      setChallengeAnswered(false);
+      setChallengeCorrect(null);
+      setSelectedChallengeOption(null);
+      try {
+        const challenge = await generateChallenge(level);
+        setDailyChallenge(challenge);
+      } catch (error) {
+        console.error("Error fetching challenge:", error);
+      } finally {
+        setChallengeLoading(false);
+      }
+    };
+    fetchChallenge();
+  }, [level]);
 
   // Proactive Assistant Greeting
   useEffect(() => {
@@ -281,11 +352,19 @@ export default function App() {
     setUniCountrySearch(country);
     setUniLoading(true);
     try {
-      // If both are empty, fetch some featured ones (e.g. USA, UK, Canada, Nigeria)
+      // If both are empty, fetch some featured ones from around the world
       if (!name && !country) {
-        const featuredCountries = ["United States", "United Kingdom", "Canada", "Nigeria"];
-        const results = await Promise.all(featuredCountries.map(c => fetchUniversities("", c)));
-        setUniversities(results.flat().slice(0, 50)); // Show top 50
+        const featuredCountries = ["United States", "United Kingdom", "Canada", "Nigeria", "Australia", "Germany", "Japan", "South Africa", "Brazil", "India"];
+        const results = await Promise.allSettled(featuredCountries.map(c => fetchUniversities("", c)));
+        
+        // Filter successful results and flatten
+        const allFeatured = results
+          .filter((r): r is PromiseFulfilledResult<University[]> => r.status === "fulfilled")
+          .map(r => r.value)
+          .flat();
+          
+        // Shuffle or just take a slice
+        setUniversities(allFeatured.sort(() => 0.5 - Math.random()).slice(0, 60)); 
       } else {
         const data = await fetchUniversities(name, country);
         setUniversities(data);
@@ -637,7 +716,10 @@ export default function App() {
                   <p className="text-[#666]">Find and explore universities from all around the world.</p>
                 </div>
                 <button
-                  onClick={() => setShowUni(false)}
+                  onClick={() => {
+                    setShowUni(false);
+                    setIsUniChatOpen(false);
+                  }}
                   className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                 >
                   <ArrowLeft size={24} />
@@ -682,16 +764,23 @@ export default function App() {
 
               <div className="flex flex-wrap gap-2">
                 <span className="text-xs font-bold text-[#999] uppercase tracking-widest mr-2 py-2">Quick Browse:</span>
-                {["Nigeria", "United States", "United Kingdom", "Canada", "Ghana", "South Africa", "India", "Australia"].map(c => (
+                {["World", "Nigeria", "United States", "United Kingdom", "Canada", "Ghana", "South Africa", "India", "Australia"].map(c => (
                   <button
                     key={c}
                     onClick={() => {
-                      setUniCountrySearch(c);
-                      handleOpenUni("", c);
+                      if (c === "World") {
+                        setUniCountrySearch("");
+                        handleOpenUni("", "");
+                      } else {
+                        setUniCountrySearch(c);
+                        handleOpenUni("", c);
+                      }
                     }}
                     className={cn(
                       "px-4 py-2 rounded-xl text-xs font-bold border transition-all",
-                      uniCountrySearch === c ? "bg-[#008751] text-white border-[#008751]" : "bg-white text-[#666] border-[#E5E5E0] hover:border-[#008751]"
+                      (c === "World" && uniCountrySearch === "") || uniCountrySearch === c 
+                        ? "bg-[#008751] text-white border-[#008751]" 
+                        : "bg-white text-[#666] border-[#E5E5E0] hover:border-[#008751]"
                     )}
                   >
                     {c}
@@ -750,6 +839,86 @@ export default function App() {
                   )}
                 </div>
               )}
+
+              {/* University Assistant Floating Button */}
+              <button
+                onClick={handleOpenUniChat}
+                className="fixed bottom-8 right-8 w-16 h-16 bg-[#008751] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-all z-50 group"
+              >
+                <GraduationCap size={32} />
+                <span className="absolute right-full mr-4 px-4 py-2 bg-white text-[#1A1A1A] text-sm font-bold rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-[#E5E5E0]">
+                  Ask Prof. Global
+                </span>
+              </button>
+
+              {/* University Assistant Chat Window */}
+              <AnimatePresence>
+                {isUniChatOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                    className="fixed bottom-28 right-8 w-[400px] max-w-[calc(100vw-4rem)] h-[600px] max-h-[calc(100vh-12rem)] bg-white border border-[#E5E5E0] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden z-50"
+                  >
+                    <div className="p-6 bg-[#008751] text-white flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                          <GraduationCap size={24} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold">University Advisor</h4>
+                          <p className="text-[10px] uppercase tracking-widest opacity-80">Prof. Global</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setIsUniChatOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+                      {uniChatMessages.map((msg, i) => (
+                        <div key={i} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                          <div className={cn(
+                            "max-w-[85%] p-4 rounded-2xl text-sm font-medium leading-relaxed",
+                            msg.role === "user" ? "bg-[#008751] text-white rounded-tr-none" : "bg-[#F0F0EB] text-[#1A1A1A] rounded-tl-none"
+                          )}>
+                            <ReactMarkdown>{msg.text}</ReactMarkdown>
+                          </div>
+                        </div>
+                      ))}
+                      {isUniTyping && (
+                        <div className="flex justify-start">
+                          <div className="bg-[#F0F0EB] p-4 rounded-2xl rounded-tl-none flex gap-1">
+                            <div className="w-1.5 h-1.5 bg-[#008751] rounded-full animate-bounce" />
+                            <div className="w-1.5 h-1.5 bg-[#008751] rounded-full animate-bounce [animation-delay:0.2s]" />
+                            <div className="w-1.5 h-1.5 bg-[#008751] rounded-full animate-bounce [animation-delay:0.4s]" />
+                          </div>
+                        </div>
+                      )}
+                      <div ref={uniChatEndRef} />
+                    </div>
+
+                    <form onSubmit={handleUniChat} className="p-6 border-t border-[#E5E5E0] bg-gray-50">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={uniChatInput}
+                          onChange={(e) => setUniChatInput(e.target.value)}
+                          placeholder="Ask about admissions, fees, campus..."
+                          className="w-full h-12 pl-4 pr-12 bg-white border border-[#E5E5E0] rounded-xl focus:outline-none focus:border-[#008751] transition-all text-sm"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!uniChatInput.trim() || isUniTyping}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-[#008751] hover:bg-[#E6F4EA] rounded-lg transition-all disabled:opacity-50"
+                        >
+                          <Send size={20} />
+                        </button>
+                      </div>
+                    </form>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ) : showWaec ? (
             <motion.div
@@ -1394,6 +1563,114 @@ export default function App() {
                 </div>
               )}
 
+              {/* Prof's Daily Challenge */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-2xl mx-auto bg-white border border-[#E5E5E0] rounded-[2.5rem] p-8 shadow-sm space-y-6 relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 p-6 opacity-5">
+                  <Trophy size={120} className="text-[#008751]" />
+                </div>
+                
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                      <Trophy size={20} />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="text-lg font-bold text-[#1A1A1A]">Prof's Daily Challenge</h3>
+                      <p className="text-xs text-[#666] font-medium uppercase tracking-widest">Test your global knowledge</p>
+                    </div>
+                  </div>
+                  {challengeAnswered && (
+                    <button 
+                      onClick={async () => {
+                        setChallengeLoading(true);
+                        setChallengeAnswered(false);
+                        setChallengeCorrect(null);
+                        setSelectedChallengeOption(null);
+                        try {
+                          const challenge = await generateChallenge(level);
+                          setDailyChallenge(challenge);
+                        } catch (error) {
+                          console.error("Error fetching challenge:", error);
+                        } finally {
+                          setChallengeLoading(false);
+                        }
+                      }}
+                      className="text-xs font-bold text-[#008751] hover:underline"
+                    >
+                      Try Another
+                    </button>
+                  )}
+                </div>
+
+                {challengeLoading ? (
+                  <div className="py-12 flex flex-col items-center gap-4">
+                    <Loader2 className="animate-spin text-[#008751]" size={32} />
+                    <p className="text-sm text-[#666] font-medium">Prof. Global is preparing a challenge...</p>
+                  </div>
+                ) : dailyChallenge ? (
+                  <div className="space-y-6 relative z-10">
+                    <p className="text-xl font-bold text-[#1A1A1A] text-left">{dailyChallenge.question}</p>
+                    
+                    <div className="grid gap-3">
+                      {dailyChallenge.options.map((option) => (
+                        <button
+                          key={option}
+                          onClick={() => {
+                            if (challengeAnswered) return;
+                            setSelectedChallengeOption(option);
+                            setChallengeAnswered(true);
+                            setChallengeCorrect(option === dailyChallenge.correctAnswer);
+                          }}
+                          disabled={challengeAnswered}
+                          className={cn(
+                            "w-full p-4 text-left rounded-2xl border-2 font-bold transition-all",
+                            selectedChallengeOption === option 
+                              ? (option === dailyChallenge.correctAnswer ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")
+                              : (challengeAnswered && option === dailyChallenge.correctAnswer ? "border-green-500 bg-green-50 text-green-700" : "border-[#E5E5E0] hover:border-[#008751] bg-white")
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span>{option}</span>
+                            {challengeAnswered && option === dailyChallenge.correctAnswer && <CheckCircle2 size={18} />}
+                            {challengeAnswered && selectedChallengeOption === option && option !== dailyChallenge.correctAnswer && <X size={18} />}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <AnimatePresence>
+                      {challengeAnswered && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          className="p-5 bg-[#F8FDF9] border border-[#C6E9D1] rounded-2xl space-y-3 text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-white", challengeCorrect ? "bg-green-500" : "bg-red-500")}>
+                              {challengeCorrect ? <CheckCircle2 size={14} /> : <X size={14} />}
+                            </div>
+                            <span className={cn("font-black uppercase tracking-widest text-xs", challengeCorrect ? "text-green-700" : "text-red-700")}>
+                              {challengeCorrect ? "Brilliant!" : "Not quite right"}
+                            </span>
+                          </div>
+                          <p className="text-sm text-[#333] leading-relaxed font-medium">
+                            {dailyChallenge.explanation}
+                          </p>
+                          <div className="pt-2 border-t border-[#C6E9D1]/50 flex items-center gap-2 text-[#008751]">
+                            <Lightbulb size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Professor's Pro Tip: Keep exploring to grow!</span>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ) : null}
+              </motion.div>
+
               <div className="space-y-6">
                 <h3 className="text-sm font-bold text-[#666] uppercase tracking-widest">Or try a Practice Quiz ({level})</h3>
                 <div className="flex flex-wrap justify-center gap-3">
@@ -1639,6 +1916,94 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+
+                {/* Suggested Questions for this Step */}
+                {currentStep?.suggestedQuestions && currentStep.suggestedQuestions.length > 0 && (
+                  <div className="pt-12 border-t border-[#E5E5E0] space-y-8">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                        <Trophy size={20} />
+                      </div>
+                      <div className="text-left">
+                        <h3 className="text-lg font-bold text-[#1A1A1A]">Challenge Questions</h3>
+                        <p className="text-xs text-[#666] font-medium uppercase tracking-widest">Test what you just learned</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-12">
+                      {currentStep.suggestedQuestions.map((q, qIdx) => (
+                        <div key={q.id} className="space-y-6">
+                          <div className="flex items-start gap-4">
+                            <div className="w-8 h-8 rounded-full bg-[#008751] text-white flex items-center justify-center font-bold text-sm flex-shrink-0 mt-1">
+                              {qIdx + 1}
+                            </div>
+                            <p className="text-xl font-bold text-[#1A1A1A] text-left">{q.question}</p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-12">
+                            {q.options.map((option) => {
+                              const isSelected = stepAnswers[`${selectedStepId}_${q.id}`] === option;
+                              const isCorrect = option === q.correctAnswer;
+                              const showExp = showStepExplanations[`${selectedStepId}_${q.id}`];
+
+                              return (
+                                <button
+                                  key={option}
+                                  onClick={() => {
+                                    if (showExp) return;
+                                    setStepAnswers(prev => ({ ...prev, [`${selectedStepId}_${q.id}`]: option }));
+                                    setShowStepExplanations(prev => ({ ...prev, [`${selectedStepId}_${q.id}`]: true }));
+                                  }}
+                                  disabled={showExp}
+                                  className={cn(
+                                    "p-4 text-left rounded-2xl border-2 font-bold transition-all",
+                                    isSelected 
+                                      ? (isCorrect ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")
+                                      : (showExp && isCorrect ? "border-green-500 bg-green-50 text-green-700" : "border-[#E5E5E0] hover:border-[#008751] bg-white")
+                                  )}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span>{option}</span>
+                                    {showExp && isCorrect && <CheckCircle2 size={18} />}
+                                    {showExp && isSelected && !isCorrect && <X size={18} />}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <AnimatePresence>
+                            {showStepExplanations[`${selectedStepId}_${q.id}`] && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                className="ml-12 p-5 bg-[#F8FDF9] border border-[#C6E9D1] rounded-2xl space-y-3 text-left"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className={cn(
+                                    "w-6 h-6 rounded-full flex items-center justify-center text-white",
+                                    stepAnswers[`${selectedStepId}_${q.id}`] === q.correctAnswer ? "bg-green-500" : "bg-red-500"
+                                  )}>
+                                    {stepAnswers[`${selectedStepId}_${q.id}`] === q.correctAnswer ? <CheckCircle2 size={14} /> : <X size={14} />}
+                                  </div>
+                                  <span className={cn(
+                                    "font-black uppercase tracking-widest text-xs",
+                                    stepAnswers[`${selectedStepId}_${q.id}`] === q.correctAnswer ? "text-green-700" : "text-red-700"
+                                  )}>
+                                    {stepAnswers[`${selectedStepId}_${q.id}`] === q.correctAnswer ? "Correct!" : "Incorrect"}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-[#333] leading-relaxed font-medium">
+                                  {q.explanation}
+                                </p>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-between items-center px-4">

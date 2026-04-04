@@ -40,9 +40,22 @@ export async function generateRoadmap(topic: string, level: "Secondary" | "Unive
                     },
                     required: ["title", "url"]
                   }
+                },
+                suggestedQuestions: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      question: { type: Type.STRING },
+                      options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      correctAnswer: { type: Type.STRING },
+                      explanation: { type: Type.STRING }
+                    },
+                    required: ["question", "options", "correctAnswer", "explanation"]
+                  }
                 }
               },
-              required: ["title", "explanation", "resources"]
+              required: ["title", "explanation", "resources", "suggestedQuestions"]
             }
           }
         },
@@ -59,11 +72,43 @@ export async function generateRoadmap(topic: string, level: "Secondary" | "Unive
     steps: data.steps.map((step: any, index: number) => ({
       ...step,
       id: `step-${index}`,
-      completed: false
+      completed: false,
+      suggestedQuestions: step.suggestedQuestions.map((q: any, qIndex: number) => ({
+        ...q,
+        id: `q-${index}-${qIndex}`
+      }))
     }))
   };
 
   return roadmap;
+}
+
+export async function generateChallenge(level: "Secondary" | "University" = "Secondary"): Promise<Question> {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `As Prof. Global, generate a single, highly interesting and thought-provoking multiple-choice "Challenge Question" for a student.
+    Level: ${level === "University" ? "University/Undergraduate" : "Secondary School"}.
+    The question should be about a fascinating fact in Science, Arts, or History.
+    Provide 4 options, the correct answer, and a very simple explanation.
+    IMPORTANT: The explanation must be so simple that a child can understand it.
+    Output in JSON format.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          question: { type: Type.STRING },
+          options: { type: Type.ARRAY, items: { type: Type.STRING } },
+          correctAnswer: { type: Type.STRING },
+          explanation: { type: Type.STRING }
+        },
+        required: ["question", "options", "correctAnswer", "explanation"]
+      }
+    }
+  });
+
+  const data = JSON.parse(response.text);
+  return { ...data, id: `challenge-${Date.now()}` };
 }
 
 export async function generateQuestions(subject: string, level: "Secondary" | "University" = "Secondary"): Promise<Question[]> {
@@ -95,6 +140,23 @@ export async function generateQuestions(subject: string, level: "Secondary" | "U
 
   const data = JSON.parse(response.text);
   return data.map((q: any, i: number) => ({ ...q, id: `q-${i}` }));
+}
+
+export async function chatWithUniversityAssistant(message: string, history: ChatMessage[], context: string = ""): Promise<string> {
+  const chat = ai.chats.create({
+    model: "gemini-3-flash-preview",
+    config: {
+      systemInstruction: `You are 'Prof. Global', the Lead University Admissions Advisor at LEARN GLOBAL. 
+      Your mission is to help students find the perfect university and understand global education systems.
+      Current Context: ${context}.
+      IMPORTANT: You are proactive, encouraging, and explain university admissions, scholarships, and campus life in very simple language. 
+      Use fun analogies, keep replies concise, and always offer a 'Professor's Admissions Tip' at the end.`,
+    },
+    history: history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),
+  });
+
+  const result = await chat.sendMessage({ message });
+  return result.text;
 }
 
 export async function chatWithAssistant(message: string, history: ChatMessage[]): Promise<string> {
@@ -240,9 +302,48 @@ export async function generateWaecQuestions(subject: string, count: number = 5):
 
 export async function fetchUniversities(name: string = "", country: string = ""): Promise<University[]> {
   const url = `https://universities.hipolabs.com/search?name=${encodeURIComponent(name)}&country=${encodeURIComponent(country)}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Failed to fetch universities");
-  return await response.json();
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Failed to fetch universities");
+    return await response.json();
+  } catch (error) {
+    console.warn("External University API failed, falling back to AI search:", error);
+    
+    // Fallback to Gemini if the API is down or blocked
+    const fallbackResponse = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Search for universities with name: "${name}" and country: "${country}". 
+      If both are empty, provide a list of 20 top universities from around the world.
+      Provide the result in JSON format as an array of objects with these fields:
+      - name: string
+      - country: string
+      - web_pages: string[] (at least one URL)
+      - state-province: string | null`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              country: { type: Type.STRING },
+              web_pages: { type: Type.ARRAY, items: { type: Type.STRING } },
+              "state-province": { type: Type.STRING, nullable: true }
+            },
+            required: ["name", "country", "web_pages"]
+          }
+        }
+      }
+    });
+    
+    try {
+      return JSON.parse(fallbackResponse.text);
+    } catch (parseError) {
+      console.error("Failed to parse AI university fallback:", parseError);
+      return [];
+    }
+  }
 }
 
 export async function fetchSubjectTopics(subject: string, level: "Secondary" | "University" = "Secondary"): Promise<string[]> {
